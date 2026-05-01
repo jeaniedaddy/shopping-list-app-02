@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>오늘의 날씨</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      color: #fff;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 24px;
+      padding: 40px;
+      width: 360px;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .location {
+      font-size: 18px;
+      font-weight: 600;
+      opacity: 0.9;
+      margin-bottom: 4px;
+    }
+
+    .date {
+      font-size: 13px;
+      opacity: 0.55;
+      margin-bottom: 32px;
+    }
+
+    .weather-icon {
+      font-size: 80px;
+      margin-bottom: 12px;
+      line-height: 1;
+    }
+
+    .description {
+      font-size: 16px;
+      opacity: 0.75;
+      margin-bottom: 8px;
+    }
+
+    .temp {
+      font-size: 72px;
+      font-weight: 700;
+      letter-spacing: -2px;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .feels-like {
+      font-size: 13px;
+      opacity: 0.55;
+      margin-bottom: 32px;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      margin-bottom: 24px;
+    }
+
+    .details {
+      display: flex;
+      justify-content: space-around;
+    }
+
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .detail-icon { font-size: 22px; }
+
+    .detail-label {
+      font-size: 11px;
+      opacity: 0.5;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-value {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .status {
+      font-size: 15px;
+      opacity: 0.7;
+      padding: 20px 0;
+    }
+
+    .error { color: #ff8a80; }
+
+    .retry-btn {
+      margin-top: 16px;
+      padding: 10px 24px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: transparent;
+      color: #fff;
+      border-radius: 20px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .retry-btn:hover { background: rgba(255,255,255,0.1); }
+  </style>
+</head>
+<body>
+  <div class="card" id="app">
+    <div class="status">위치 정보를 가져오는 중...</div>
+  </div>
+
+  <script>
+    const WMO_CODES = {
+      0:  { label: '맑음',           icon: '☀️' },
+      1:  { label: '대체로 맑음',    icon: '🌤️' },
+      2:  { label: '부분 흐림',      icon: '⛅' },
+      3:  { label: '흐림',           icon: '☁️' },
+      45: { label: '안개',           icon: '🌫️' },
+      48: { label: '결빙 안개',      icon: '🌫️' },
+      51: { label: '가벼운 이슬비',  icon: '🌦️' },
+      53: { label: '이슬비',         icon: '🌦️' },
+      55: { label: '강한 이슬비',    icon: '🌧️' },
+      61: { label: '가벼운 비',      icon: '🌧️' },
+      63: { label: '비',             icon: '🌧️' },
+      65: { label: '강한 비',        icon: '🌧️' },
+      71: { label: '가벼운 눈',      icon: '🌨️' },
+      73: { label: '눈',             icon: '❄️' },
+      75: { label: '강한 눈',        icon: '❄️' },
+      77: { label: '눈 알갱이',      icon: '🌨️' },
+      80: { label: '소나기',         icon: '🌦️' },
+      81: { label: '강한 소나기',    icon: '🌧️' },
+      82: { label: '폭우',           icon: '⛈️' },
+      85: { label: '눈 소나기',      icon: '🌨️' },
+      86: { label: '강한 눈 소나기', icon: '❄️' },
+      95: { label: '뇌우',           icon: '⛈️' },
+      96: { label: '우박 뇌우',      icon: '⛈️' },
+      99: { label: '강한 우박 뇌우', icon: '⛈️' },
+    };
+
+    function getWeatherInfo(code) {
+      return WMO_CODES[code] || { label: '알 수 없음', icon: '🌡️' };
+    }
+
+    function formatDate() {
+      return new Date().toLocaleDateString('ko-KR', {
+        year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
+      });
+    }
+
+    function setStatus(msg, isError = false) {
+      document.getElementById('app').innerHTML =
+        `<div class="status ${isError ? 'error' : ''}">${msg}</div>
+         ${isError ? '<button class="retry-btn" onclick="init()">다시 시도</button>' : ''}`;
+    }
+
+    async function fetchWeather(lat, lon) {
+      const weatherUrl =
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+        `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
+      const geoUrl =
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=ko`;
+
+      const [weatherRes, geoRes] = await Promise.all([
+        fetch(weatherUrl),
+        fetch(geoUrl, { headers: { 'User-Agent': 'WeatherApp/1.0' } })
+      ]);
+
+      if (!weatherRes.ok) throw new Error('날씨 데이터를 가져오지 못했습니다.');
+
+      const weather = await weatherRes.json();
+      const geo = geoRes.ok ? await geoRes.json() : null;
+
+      const c = weather.current;
+      const info = getWeatherInfo(c.weather_code);
+
+      const city =
+        geo?.address?.city ||
+        geo?.address?.town ||
+        geo?.address?.county ||
+        geo?.address?.state ||
+        '현재 위치';
+
+      render({ city, info, c });
+    }
+
+    function render({ city, info, c }) {
+      document.getElementById('app').innerHTML = `
+        <div class="location">📍 ${city}</div>
+        <div class="date">${formatDate()}</div>
+        <div class="weather-icon">${info.icon}</div>
+        <div class="description">${info.label}</div>
+        <div class="temp">${Math.round(c.temperature_2m)}°</div>
+        <div class="feels-like">체감 온도 ${Math.round(c.apparent_temperature)}°C</div>
+        <hr class="divider" />
+        <div class="details">
+          <div class="detail-item">
+            <span class="detail-icon">💧</span>
+            <span class="detail-label">습도</span>
+            <span class="detail-value">${c.relative_humidity_2m}%</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-icon">💨</span>
+            <span class="detail-label">풍속</span>
+            <span class="detail-value">${c.wind_speed_10m} km/h</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function init() {
+      setStatus('위치 정보를 가져오는 중...');
+      if (!navigator.geolocation) {
+        setStatus('이 브라우저는 위치 서비스를 지원하지 않습니다.', true);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        pos => fetchWeather(pos.coords.latitude, pos.coords.longitude)
+                 .catch(e => setStatus(e.message, true)),
+        () => setStatus('위치 접근이 거부되었습니다.<br>브라우저에서 위치 권한을 허용해 주세요.', true)
+      );
+    }
+
+    init();
+  </script>
+</body>
+</html>
